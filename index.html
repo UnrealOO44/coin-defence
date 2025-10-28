@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Crypto Tower Defense</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        html, body {
+            background: #000;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            gap: 0;
+        }
+        .topbar {
+            background: rgb(16 18 24 / 0.8);
+            padding: 8px 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid #f39c12;
+        }
+        .topbar span {
+            color: #fff;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        .game-stats {
+            display: flex;
+            gap: 20px;
+        }
+        .stat {
+            color: #fff;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        .stat.gold {
+            color: #f39c12;
+        }
+        .stat.lives {
+            color: #e74c3c;
+        }
+        .stat.wave {
+            color: #3498db;
+        }
+        #gameCanvas {
+            display: block;
+            border: 2px solid #2c3e50;
+            background: #1a1a1a;
+            max-width: 1920px;
+            max-height: 1080px;
+        }
+        .hint {
+            background: rgb(16 18 24 / 0.8);
+            padding: 8px 12px;
+            text-align: center;
+            color: #999;
+            font-family: monospace;
+            font-size: 12px;
+            border-top: 1px solid #2c3e50;
+        }
+        .controls {
+            background: rgb(16 18 24 / 0.8);
+            padding: 12px;
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            border-top: 1px solid #2c3e50;
+        }
+        .tower-btn {
+            width: 80px;
+            height: 80px;
+            background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+            border: 2px solid #2c3e50;
+            border-radius: 8px;
+            color: white;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            transition: all 0.2s ease;
+            position: relative;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+            overflow: hidden;
+        }
+        .tower-btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+            transition: left 0.5s;
+        }
+        .tower-btn:hover::before {
+            left: 100%;
+        }
+        .tower-btn:hover {
+            background: linear-gradient(135deg, #5dade2 0%, #3498db 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.4);
+        }
+        .tower-btn.miner {
+            background: linear-gradient(135deg, #95a5a6, #7f8c8d);
+            border-color: #7f8c8d;
+        }
+        .tower-btn.miner:hover {
+            background: linear-gradient(135deg, #a5b5b6, #8f9c9d);
+        }
+        .tower-btn.lightning {
+            background: linear-gradient(135deg, #3498db, #2980b9);
+            border-color: #2980b9;
+        }
+        .tower-btn.lightning:hover {
+            background: linear-gradient(135deg, #4aa8db, #398fc9);
+        }
+        .tower-btn.fire {
+            background: linear-gradient(135deg, #e74c3c, #c0392b);
+            border-color: #c0392b;
+        }
+        .tower-btn.fire:hover {
+            background: linear-gradient(135deg, #f75c4c, #d0493b);
+        }
+        .tower-btn:active {
+            transform: translateY(0);
+            box-shadow: 0 1px 2px rgba(0,0,0,0.3);
+        }
+        .tower-btn.selected {
+            background: linear-gradient(135deg, #e67e22 0%, #d35400 100%);
+            border-color: #f39c12;
+            box-shadow: 0 0 12px rgba(230, 126, 34, 0.6);
+        }
+        .tower-btn:disabled {
+            background: linear-gradient(135deg, #7f8c8d 0%, #5d6d7e 100%);
+            cursor: not-allowed;
+            opacity: 0.6;
+            transform: none;
+        }
+        .tower-icon {
+            width: 40px;
+            height: 40px;
+            line-height: 1;
+            image-rendering: pixelated;
+            image-rendering: -moz-crisp-edges;
+            image-rendering: crisp-edges;
+        }
+        .tower-name {
+            font-size: 10px;
+            font-weight: bold;
+            text-align: center;
+            line-height: 1;
+        }
+        .tower-cost {
+            position: absolute;
+            top: -8px;
+            right: -8px;
+            background: #f39c12;
+            color: #000;
+            font-size: 10px;
+            font-weight: bold;
+            padding: 2px 6px;
+            border-radius: 10px;
+            border: 1px solid #000;
+        }
+        .action-btn {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            font-family: monospace;
+            font-size: 12px;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: background 0.2s;
+        }
+        .action-btn:hover {
+            background: #2980b9;
+        }
+        .action-btn.start-wave {
+            background: #27ae60;
+        }
+        .action-btn.start-wave:hover {
+            background: #229954;
+        }
+        .action-btn.start-wave:disabled {
+            background: #7f8c8d;
+            cursor: not-allowed;
+        }
+        .tower-info {
+            background: rgb(16 18 24 / 0.8);
+            padding: 8px 12px;
+            color: #fff;
+            font-family: monospace;
+            font-size: 11px;
+            border-top: 1px solid #2c3e50;
+            display: none;
+        }
+        .tower-info.active {
+            display: block;
+        }
+        .tower-controls {
+            position: absolute;
+            background: rgb(16 18 24 / 0.9);
+            padding: 12px;
+            color: #fff;
+            font-family: monospace;
+            font-size: 11px;
+            border: 2px solid #f39c12;
+            border-radius: 8px;
+            display: none;
+            flex-direction: column;
+            gap: 10px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+            z-index: 1000;
+            min-width: 200px;
+        }
+        .tower-controls.active {
+            display: flex;
+        }
+        .tower-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #2c3e50;
+        }
+        .tower-name {
+            font-weight: bold;
+            color: #f39c12;
+        }
+        .tower-level {
+            background: #3498db;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 10px;
+        }
+        .tower-stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 4px 8px;
+            margin-bottom: 8px;
+        }
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+        }
+        .tower-actions {
+            display: flex;
+            gap: 8px;
+            justify-content: space-between;
+        }
+        .sell-btn {
+            background: #e74c3c;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            font-family: monospace;
+            font-size: 11px;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: background 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            flex: 1;
+        }
+        .sell-btn:hover {
+            background: #c0392b;
+        }
+        .upgrade-btn {
+            background: #27ae60;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            font-family: monospace;
+            font-size: 11px;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: background 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            flex: 1;
+        }
+        .upgrade-btn:hover {
+            background: #229954;
+        }
+        .upgrade-btn:disabled {
+            background: #7f8c8d;
+            cursor: not-allowed;
+        }
+        .upgrade-info {
+            font-size: 9px;
+            color: #999;
+            text-align: center;
+            margin-top: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="topbar">
+            <span>🏰 Crypto Tower Defense</span>
+            <div class="game-stats">
+                <span class="stat gold">💰 <span id="gold">100</span></span>
+                <span class="stat lives">❤️ <span id="lives">20</span></span>
+                <span class="stat wave">🌊 Wave <span id="wave">1</span></span>
+            </div>
+        </div>
+        <canvas id="gameCanvas" width="1200" height="700"></canvas>
+        <div class="controls">
+            <button class="tower-btn miner" id="tower1Btn">
+                <span class="tower-icon">⛏️</span>
+                <span class="tower-name">Miner</span>
+                <span class="tower-cost">50</span>
+            </button>
+            <button class="tower-btn lightning" id="tower2Btn">
+                <span class="tower-icon">⚡</span>
+                <span class="tower-name">Lightning</span>
+                <span class="tower-cost">100</span>
+            </button>
+            <button class="tower-btn fire" id="tower3Btn">
+                <span class="tower-icon">🔥</span>
+                <span class="tower-name">Fire</span>
+                <span class="tower-cost">150</span>
+            </button>
+            <button class="action-btn start-wave" id="startWaveBtn">▶️ Start Wave</button>
+            <button class="action-btn" id="speedBtn">⚡ Speed: 1x</button>
+        </div>
+        <div class="tower-info" id="towerInfo"></div>
+        <div class="tower-controls" id="towerControls">
+            <div class="tower-header">
+                <span class="tower-name" id="towerName">Tower</span>
+                <span class="tower-level" id="towerLevel">Lvl 1</span>
+            </div>
+            <div class="tower-stats">
+                <div class="stat-row">
+                    <span>Damage:</span>
+                    <span id="towerDamage">10</span>
+                </div>
+                <div class="stat-row">
+                    <span>Range:</span>
+                    <span id="towerRange">80</span>
+                </div>
+                <div class="stat-row">
+                    <span>Fire Rate:</span>
+                    <span id="towerFireRate">1.0/sec</span>
+                </div>
+                <div class="stat-row">
+                    <span>Kills:</span>
+                    <span id="towerKills">0</span>
+                </div>
+            </div>
+            <div class="tower-actions">
+                <button class="upgrade-btn" id="upgradeBtn">
+                    <span>⬆️ Upgrade</span>
+                    <span id="upgradeCost">0</span>
+                </button>
+                <button class="sell-btn" id="sellBtn">
+                    <span>💰 Sell</span>
+                    <span id="sellPrice">0</span>
+                </button>
+            </div>
+            <div class="upgrade-info" id="upgradeInfo">Upgrades: 0/3</div>
+        </div>
+        <div class="hint">Click to place towers • Towers auto-attack • Don't let coins reach the end! • Press M to mute/unmute audio</div>
+    </div>
+
+    <script src="src/utils/math.js"></script>
+    <script src="src/utils/grid.js"></script>
+    <script src="src/utils/sprites.js"></script>
+    <script src="src/core/input.js"></script>
+    <script src="src/engine/renderer.js"></script>
+    <script src="src/engine/audio.js"></script>
+    <script src="src/game/path.js"></script>
+    <script src="src/game/enemy.js"></script>
+    <script src="src/game/tower.js"></script>
+    <script src="src/game/projectile.js"></script>
+    <script src="src/game/waves.js"></script>
+    <script src="src/game/ui.js"></script>
+    <script src="src/core/loop.js"></script>
+    <script src="src/game/main.js"></script>
+</body>
+</html>
