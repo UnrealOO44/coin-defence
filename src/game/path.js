@@ -12,17 +12,41 @@ window.Path = function(grid) {
 };
 
 window.Path.prototype.createDefaultPath = function() {
-  // Create a simple S-shaped path
+  // Create a path that aligns perfectly with grid cells
+  const rows = this.grid.rows;
+  const cols = this.grid.cols;
+  
+  // Clear any existing path markings
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      this.grid.setPath(row, col, false);
+    }
+  }
+  
+  // Use exact grid coordinates for a 18x40 grid
+  const middleRow = Math.floor(rows / 2); // Row 9 (middle of 18 rows)
+  const upperRow = 4; // Row 4 (good strategic position)
+  const lowerRow = 13; // Row 13 (good strategic position)
+  
+  // Define waypoints using exact grid coordinates for 40-column grid
   this.waypoints = [
-    { row: 7, col: 0 },
-    { row: 7, col: 6 },
-    { row: 2, col: 6 },
-    { row: 2, col: 12 },
-    { row: 10, col: 12 },
-    { row: 10, col: 18 },
-    { row: 5, col: 18 },
-    { row: 5, col: 24 }
+    { row: middleRow, col: 0 },   // Start at left edge
+    { row: middleRow, col: 8 },   // Move right
+    { row: upperRow, col: 8 },    // Move up
+    { row: upperRow, col: 16 },   // Move right
+    { row: middleRow, col: 16 },  // Move down
+    { row: middleRow, col: 24 },  // Move right
+    { row: lowerRow, col: 24 },   // Move down
+    { row: lowerRow, col: 32 },   // Move right
+    { row: middleRow, col: 32 },  // Move up
+    { row: middleRow, col: 39 }   // End at right edge (col 39 for 40 columns)
   ];
+
+  // Ensure waypoints are within grid bounds
+  this.waypoints = this.waypoints.map(point => ({
+    row: Math.max(0, Math.min(rows - 1, point.row)),
+    col: Math.max(0, Math.min(cols - 1, point.col))
+  }));
 
   // Mark path cells on grid
   this.markPathOnGrid();
@@ -160,4 +184,11 @@ window.Path.prototype.getProgressAtPosition = function(x, y) {
   }
   
   return closestProgress;
+};
+
+// Update path when grid size changes
+window.Path.prototype.updateGrid = function(newGrid) {
+  this.grid = newGrid;
+  this.waypoints = [];
+  this.createDefaultPath();
 };

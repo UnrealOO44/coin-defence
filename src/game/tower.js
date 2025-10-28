@@ -1,209 +1,186 @@
-// Tower system for defense
+// Tower system
 window.FILE_MANIFEST = window.FILE_MANIFEST || [];
 window.FILE_MANIFEST.push({
   name: 'src/game/tower.js',
-  exports: ['Tower', 'TowerManager']
+  exports: ['Tower', 'TowerManager'],
+  dependencies: ['Vector2D', 'gridToPixel']
 });
 
-window.Tower = function(row, col, type, cellSize) {
-  cellSize = cellSize || 50;
+window.Tower = function(row, col, type, grid) {
   this.row = row;
   this.col = col;
   this.type = type;
-  this.level = 1;
-  this.upgradesMade = 0;
-  this.maxUpgrades = 3;
-  this.selected = false;
-  this.lastFire = 0;
-  this.cellSize = cellSize;
-  this.kills = 0;
-  this.maxHealth = 100;
-  this.health = 100;
-  this.setStatsByType();
-};
-
-window.Tower.prototype.setStatsByType = function() {
-  // Set base stats first
-  switch(this.type) {
+  this.grid = grid;
+  
+  // Position in pixels
+  const pos = window.gridToPixel(row, col, grid.cellSize);
+  this.x = pos.x + grid.cellSize / 2;
+  this.y = pos.y + grid.cellSize / 2;
+  
+  // Tower properties based on type - scaled for 20px cells
+  switch(type) {
     case 'miner':
-      this.baseDamage = 10;
-      this.baseRange = 80;
-      this.baseFireRate = 1000;
+      this.damage = 10;
+      this.range = 40; // 2 grids (2 * 20px)
+      this.fireRate = 1.5; // Fires per second
+      this.color = '#3498db';
       this.cost = 50;
-      this.color = '#95a5a6';
-      this.projectileSpeed = 200;
-      this.projectileColor = '#ecf0f1';
+      this.projectileSpeed = 80;
+      this.projectileSize = 3;
       break;
     case 'lightning':
-      this.baseDamage = 25;
-      this.baseRange = 120;
-      this.baseFireRate = 1500;
+      this.damage = 40;
+      this.range = 80; // 4 grids (4 * 20px)
+      this.fireRate = 0.3;
+      this.color = '#9b59b6';
       this.cost = 100;
-      this.color = '#3498db';
-      this.projectileSpeed = 400;
-      this.projectileColor = '#f1c40f';
+      this.projectileSpeed = 100;
+      this.projectileSize = 2;
       break;
     case 'fire':
-      this.baseDamage = 40;
-      this.baseRange = 100;
-      this.baseFireRate = 2000;
+      this.damage = 25;
+      this.range = 60; // 3 grids (3 * 20px)
+      this.fireRate = 0.8;
+      this.color = '#e67e22';
       this.cost = 150;
-      this.color = '#e74c3c';
-      this.projectileSpeed = 150;
-      this.projectileColor = '#ff6b35';
-      this.slowEffect = true;
-      this.slowDuration = 2000;
+      this.projectileSpeed = 60;
+      this.projectileSize = 4;
+      this.slowEffect = 0.5; // 50% slow
       break;
   }
   
-  // Apply upgrade multipliers
-  const damageMultiplier = 1 + (this.level - 1) * 0.3; // +30% per level
-  const rangeMultiplier = 1 + (this.level - 1) * 0.15; // +15% per level
-  const fireRateMultiplier = 1 + (this.level - 1) * 0.2; // +20% fire rate per level
-  
-  this.damage = Math.floor(this.baseDamage * damageMultiplier);
-  this.range = Math.floor(this.baseRange * rangeMultiplier);
-  this.fireRate = Math.floor(this.baseFireRate / fireRateMultiplier); // Faster = lower number
+  this.level = 1;
+  this.maxLevel = 3;
+  this.upgradesMade = 0;
+  this.lastFireTime = 0;
+  this.target = null;
+  this.selected = false;
+  this.maxHealth = 100;
+  this.health = this.maxHealth;
+  this.blinking = false;
+  this.blinkDuration = 0;
+  this.showHealthBar = false;
+  this.destroyed = false;
 };
 
-window.Tower.prototype.update = function(deltaTime, enemies, projectileManager) {
-  const now = Date.now();
-  
-  if (now - this.lastFire >= this.fireRate) {
-    const target = this.findTarget(enemies);
-    if (target) {
-      this.fire(target, projectileManager);
-      this.lastFire = now;
+window.Tower.prototype.update = function(deltaTime, enemies, projectileManager, gameTime) {
+  // Update blinking effect
+  if (this.blinking) {
+    this.blinkDuration -= deltaTime;
+    if (this.blinkDuration <= 0) {
+      this.blinking = false;
     }
+  }
+  
+  // Hide health bar if health is full and not recently damaged
+  if (this.health >= this.maxHealth && !this.blinking) {
+    this.showHealthBar = false;
+  }
+  
+  // Don't fire if tower is destroyed
+  if (this.destroyed) return;
+  
+  const adjustedDelta = deltaTime / 1000; // Convert to seconds
+  const fireInterval = 1000 / this.fireRate;
+  
+  // Find target if we don't have one or if current target left range
+  if (!this.target || !enemies.includes(this.target) || this.target.isDead() || 
+      Math.hypot(this.target.x - this.x, this.target.y - this.y) > this.range) {
+    this.target = this.findTarget(enemies);
+  }
+  
+  // Fire at target if ready and still in range
+  if (this.target && gameTime - this.lastFireTime >= fireInterval && 
+      Math.hypot(this.target.x - this.x, this.target.y - this.y) <= this.range) {
+    this.fire(projectileManager);
+    this.lastFireTime = gameTime;
   }
 };
 
 window.Tower.prototype.findTarget = function(enemies) {
-  const centerX = this.col * this.cellSize + this.cellSize / 2;
-  const centerY = this.row * this.cellSize + this.cellSize / 2;
-  
-  // Find all enemies in range
-  const enemiesInRange = [];
+  let closestEnemy = null;
+  let closestDistance = Infinity;
   
   for (let enemy of enemies) {
-    const distance = Math.sqrt(
-      Math.pow(enemy.x - centerX, 2) + 
-      Math.pow(enemy.y - centerY, 2)
-    );
+    if (!enemy || enemy.isDead()) continue;
     
-    if (distance <= this.range) {
-      enemiesInRange.push(enemy);
+    const distance = Math.hypot(enemy.x - this.x, enemy.y - this.y);
+    if (distance <= this.range && distance < closestDistance) {
+      closestDistance = distance;
+      closestEnemy = enemy;
     }
   }
   
-  if (enemiesInRange.length === 0) {
-    return null;
-  }
-  
-  // Find the enemy with lowest health
-  let lowestHealthEnemy = enemiesInRange[0];
-  for (let enemy of enemiesInRange) {
-    if (enemy.health < lowestHealthEnemy.health) {
-      lowestHealthEnemy = enemy;
-    }
-  }
-  
-  return lowestHealthEnemy;
+  return closestEnemy;
 };
 
-window.Tower.prototype.fire = function(target, projectileManager) {
-  const startX = this.col * this.cellSize + this.cellSize / 2;
-  const startY = this.row * this.cellSize + this.cellSize / 2;
-  
-  // Record that a tower fired (for auto-speed management)
-  if (window.game && window.game.recordTowerFire) {
-    window.game.recordTowerFire();
-  }
-  
-  // Play tower-specific shooting sound
-  if (window.game && window.game.audioEngine) {
-    switch(this.type) {
-      case 'miner':
-        window.game.audioEngine.play('minerShoot');
-        break;
-      case 'lightning':
-        window.game.audioEngine.play('lightningShoot');
-        break;
-      case 'fire':
-        window.game.audioEngine.play('fireShoot');
-        break;
+window.Tower.prototype.fire = function(projectileManager) {
+  if (this.target) {
+    console.log('Tower firing at target at', this.target.x, this.target.y, 'from', this.x, this.y);
+    projectileManager.createProjectile(
+      this.x,
+      this.y,
+      this.target,
+      this.damage,
+      this.projectileSpeed,
+      this.projectileSize,
+      this.color,
+      this.slowEffect
+    );
+    
+    // Notify game about tower fire
+    if (window.game) {
+      window.game.recordTowerFire();
     }
   }
-  
-  projectileManager.createProjectile(
-    startX, 
-    startY, 
-    target, 
-    this.damage, 
-    this.projectileSpeed, 
-    this.projectileColor,
-    this.slowEffect,
-    this.slowDuration,
-    this
-  );
 };
 
 window.Tower.prototype.upgrade = function() {
-  if (this.upgradesMade < this.maxUpgrades) {
+  if (this.level < this.maxLevel) {
     this.level++;
     this.upgradesMade++;
-    this.setStatsByType();
+    
+    // Upgrade stats
+    this.damage *= 1.4;
+    this.range *= 1.2;
+    this.fireRate *= 1.2;
+    
     return true;
   }
   return false;
 };
 
-window.Tower.prototype.incrementKills = function() {
-  this.kills++;
-};
-
-window.Tower.prototype.takeDamage = function(damage) {
-  this.health -= damage;
-  
-  // Play damage sound
-  if (window.game && window.game.audioEngine) {
-    window.game.audioEngine.play('towerHit');
-  }
-  
-  // Check if tower is destroyed
-  if (this.health <= 0) {
-    this.health = 0;
-    
-    // Remove tower from game
-    if (window.game && window.game.towerManager) {
-      window.game.towerManager.removeTower(this);
-      
-      // Play destruction sound
-      if (window.game.audioEngine) {
-        window.game.audioEngine.play('towerDestroyed');
-      }
-    }
-  }
-};
-
-window.Tower.prototype.getHealthPercent = function() {
-  return this.health / this.maxHealth;
-};
-
-window.Tower.prototype.repair = function() {
-  this.health = this.maxHealth;
-};
-
 window.Tower.prototype.getUpgradeCost = function() {
-  return Math.floor(this.cost * 0.5 * Math.pow(1.5, this.level - 1));
+  if (this.level >= this.maxLevel) return 0;
+  return Math.floor(this.cost * this.level * 0.7);
 };
 
 window.Tower.prototype.getTotalValue = function() {
   let totalValue = this.cost;
   for (let i = 1; i < this.level; i++) {
-    totalValue += Math.floor(this.cost * 0.5 * Math.pow(1.5, i - 1));
+    totalValue += this.getUpgradeCost();
   }
   return totalValue;
+};
+
+window.Tower.prototype.takeDamage = function(damage) {
+  if (this.destroyed) return;
+  
+  this.health -= damage;
+  this.showHealthBar = true;
+  this.blinking = true;
+  this.blinkDuration = 200;
+  
+  if (this.health <= 0) {
+    this.health = 0;
+    this.destroyed = true;
+  }
+  
+  return this.destroyed;
+};
+
+window.Tower.prototype.getHealthPercent = function() {
+  return this.health / this.maxHealth;
 };
 
 window.Tower.prototype.isDamaged = function() {
@@ -211,34 +188,42 @@ window.Tower.prototype.isDamaged = function() {
 };
 
 window.Tower.prototype.getPixelPosition = function() {
-  return {
-    x: this.col * this.cellSize + this.cellSize / 2,
-    y: this.row * this.cellSize + this.cellSize / 2
-  };
+  return { x: this.x, y: this.y };
+};
+
+window.Tower.prototype.isDead = function() {
+  return this.destroyed;
+};
+
+window.Tower.isClicked = function(tower, x, y) {
+  const distance = Math.hypot(x - tower.x, y - tower.y);
+  return distance <= tower.grid.cellSize / 2;
 };
 
 window.TowerManager = function(grid) {
-  this.towers = [];
   this.grid = grid;
+  this.towers = [];
   this.selectedTower = null;
 };
 
 window.TowerManager.prototype.placeTower = function(row, col, type) {
-  if (this.grid.isOccupied(row, col)) {
+  if (!this.grid.isValidCell(row, col) || this.grid.isOccupied(row, col)) {
     return null;
   }
-
-  const tower = new window.Tower(row, col, type, this.grid.cellSize);
+  
+  const tower = new window.Tower(row, col, type, this.grid);
   this.towers.push(tower);
   this.grid.setOccupied(row, col, true);
+  
   return tower;
 };
 
 window.TowerManager.prototype.removeTower = function(tower) {
   const index = this.towers.indexOf(tower);
-  if (index > -1) {
+  if (index !== -1) {
     this.towers.splice(index, 1);
     this.grid.setOccupied(tower.row, tower.col, false);
+    
     if (this.selectedTower === tower) {
       this.selectedTower = null;
     }
@@ -249,19 +234,10 @@ window.TowerManager.prototype.selectTower = function(x, y) {
   this.selectedTower = null;
   
   for (let tower of this.towers) {
-    const towerX = tower.col * this.grid.cellSize + this.grid.cellSize / 2;
-    const towerY = tower.row * this.grid.cellSize + this.grid.cellSize / 2;
-    
-    const distance = Math.sqrt(
-      Math.pow(x - towerX, 2) + 
-      Math.pow(y - towerY, 2)
-    );
-    
-    if (distance <= this.grid.cellSize / 2) {
+    tower.selected = false;
+    if (window.Tower.isClicked(tower, x, y) && !tower.destroyed) {
       this.selectedTower = tower;
       tower.selected = true;
-    } else {
-      tower.selected = false;
     }
   }
   
@@ -269,12 +245,19 @@ window.TowerManager.prototype.selectTower = function(x, y) {
 };
 
 window.TowerManager.prototype.update = function(deltaTime, enemies, projectileManager) {
-  for (let tower of this.towers) {
-    tower.update(deltaTime, enemies, projectileManager);
+  const gameTime = performance.now();
+  
+  for (let i = this.towers.length - 1; i >= 0; i--) {
+    const tower = this.towers[i];
+    tower.update(deltaTime, enemies, projectileManager, gameTime);
+    
+    // Remove destroyed towers
+    if (tower.destroyed) {
+      this.grid.setOccupied(tower.row, tower.col, false);
+      if (this.selectedTower === tower) {
+        this.selectedTower = null;
+      }
+      this.towers.splice(i, 1);
+    }
   }
-};
-
-window.TowerManager.prototype.clear = function() {
-  this.towers = [];
-  this.selectedTower = null;
 };

@@ -19,8 +19,17 @@ window.Game = function() {
   this.paused = false;
   this.speedMultiplier = 1;
   
-  // Initialize systems
-  this.grid = new window.Grid(this.canvas.width, this.canvas.height, 50);
+  // Initialize canvas size
+  this.setupResponsiveCanvas();
+  
+  // Game status tracking
+  this.lastTowerFireTime = 0;
+  this.projectilesFired = 0;
+  this.enemiesKilled = 0;
+  this.towersPlaced = 0;
+  
+  // Initialize systems with fixed cell size
+  this.grid = new window.Grid(this.canvas.width, this.canvas.height, this.cellSize);
   this.path = new window.Path(this.grid);
   this.input = new window.Input();
   this.renderer = new window.Renderer(this.canvas);
@@ -43,6 +52,7 @@ window.Game = function() {
   this.speedUpDelay = 5000; // 5 seconds delay before speeding up
   this.enemiesPassedTime = 0; // When enemies first passed the defense area
   this.currentlySpeededUp = false;
+  this.towerLastFiredTime = Date.now(); // Initialize tower fire time tracking
   
   // Setup event listeners
   this.setupEventListeners();
@@ -51,21 +61,59 @@ window.Game = function() {
   this.updateUI();
 };
 
+window.Game.prototype.setupResponsiveCanvas = function() {
+  // Set canvas dimensions for consistent 40x18 grid
+  const cols = 40; // Grid columns
+  const rows = 18; // Grid rows
+  const targetCellSize = 20; // Target cell size for better fit
+  
+  // Force cell size to exactly 20px and calculate canvas dimensions
+  this.cellSize = 20;
+  const finalWidth = cols * this.cellSize;
+  const finalHeight = rows * this.cellSize;
+  
+  // Remove CSS scaling to show actual canvas size
+  this.canvas.style.width = '';
+  this.canvas.style.height = '';
+  
+  // Set canvas to exact grid dimensions
+  this.canvas.width = cols * this.cellSize;
+  this.canvas.height = rows * this.cellSize;
+  
+  // Handle resize
+  window.addEventListener('resize', () => {
+    this.setupResponsiveCanvas();
+    // Reinitialize systems that depend on canvas size
+    this.grid = new window.Grid(this.canvas.width, this.canvas.height, this.cellSize);
+    this.path = new window.Path(this.grid);
+    this.towerManager.grid = this.grid;
+    this.enemyManager.path = this.path;
+    // Update renderer cell size
+    this.renderer.updateCellSize(this.cellSize);
+  });
+};
+
 window.Game.prototype.setupEventListeners = function() {
   const self = this;
   
-  this.canvas.addEventListener('click', function(e) {
+  // Mouse/Touch input handlers
+  const handleCanvasClick = (x, y) => {
     if (self.gameOver || self.paused) return;
     
-    const gridPos = self.input.getGridPosition(self.grid.cellSize);
-    const row = gridPos.row;
-    const col = gridPos.col;
+    // Use canvas coordinates directly (already converted by input system)
+    const canvasX = x;
+    const canvasY = y;
+    
+    // Convert to grid coordinates
+    const gridPos = {
+      row: Math.floor(canvasY / self.grid.cellSize),
+      col: Math.floor(canvasX / self.grid.cellSize)
+    };
     
     // Check for tower selection
-    const clickedTower = self.towerManager.selectTower(self.input.mouse.x, self.input.mouse.y);
+    const clickedTower = self.towerManager.selectTower(canvasX, canvasY);
     
     if (clickedTower) {
-      // Tower selected, show controls
       self.ui.showTowerControls(clickedTower);
       return;
     }
@@ -73,22 +121,55 @@ window.Game.prototype.setupEventListeners = function() {
     // Check for tower placement
     const towerType = self.ui.getSelectedTowerType();
     if (towerType) {
-      self.placeTower(row, col, towerType);
+      self.placeTower(gridPos.row, gridPos.col, towerType);
       self.ui.clearSelection();
     }
-  });
-
-  this.canvas.addEventListener('mousemove', function(e) {
-    self.mouseX = self.input.mouse.x;
-    self.mouseY = self.input.mouse.y;
+  };
+  
+  const handleCanvasLongPress = (x, y) => {
+    if (self.gameOver || self.paused) return;
+    
+    // Use canvas coordinates directly (already converted by input system)
+    const canvasX = x;
+    const canvasY = y;
+    
+    // Check for tower selection (long press selects tower)
+    const clickedTower = self.towerManager.selectTower(canvasX, canvasY);
+    if (clickedTower) {
+      self.ui.showTowerControls(clickedTower);
+    }
+  };
+  
+  const handleCanvasMove = (x, y) => {
+    // Mouse coordinates are already updated by input system
     
     // Update tower controls if tower is selected
     if (self.towerManager.selectedTower) {
       self.ui.showTowerControls(self.towerManager.selectedTower);
     }
-  });
+  };
+  
+  // Set up input callbacks
+  if (self.input.isMobile) {
+    self.input.setTapCallback(handleCanvasClick);
+    self.input.setLongPressCallback(handleCanvasLongPress);
+    self.input.setTouchMoveCallback(handleCanvasMove);
+  } else {
+    // Desktop mouse events - input system already handles coordinate conversion
+    self.canvas.addEventListener('click', function(e) {
+      handleCanvasClick(self.input.mouse.x, self.input.mouse.y);
+    });
 
-  // Tower upgrade keyboard shortcut
+    self.canvas.addEventListener('dblclick', function(e) {
+      handleCanvasLongPress(self.input.mouse.x, self.input.mouse.y);
+    });
+
+    self.canvas.addEventListener('mousemove', function(e) {
+      handleCanvasMove(self.input.mouse.x, self.input.mouse.y);
+    });
+  }
+
+  // Keyboard shortcuts
   window.addEventListener('keydown', function(e) {
     if (e.key === 'u' || e.key === 'U') {
       self.upgradeSelectedTower();
@@ -114,7 +195,11 @@ window.Game.prototype.placeTower = function(row, col, type) {
     const tower = this.towerManager.placeTower(row, col, type);
     if (tower) {
       this.gold -= cost;
+      this.towersPlaced++;
       this.updateUI();
+      if (this.audioEngine) {
+        this.audioEngine.play('placeTower');
+      }
     }
   }
 };
@@ -127,6 +212,9 @@ window.Game.prototype.upgradeSelectedTower = function() {
       this.gold -= upgradeCost;
       this.ui.showTowerControls(tower); // Refresh controls to update costs
       this.updateUI();
+      if (this.audioEngine) {
+        this.audioEngine.play('upgradeTower');
+      }
     }
   }
 };
@@ -134,11 +222,14 @@ window.Game.prototype.upgradeSelectedTower = function() {
 window.Game.prototype.sellSelectedTower = function() {
   const tower = this.towerManager.selectedTower;
   if (tower) {
-    const sellValue = Math.floor(tower.cost * 0.5);
+    const sellValue = Math.floor(tower.getTotalValue() * 0.7); // 70% refund of total value
     this.gold += sellValue;
     this.towerManager.removeTower(tower);
     this.ui.hideTowerControls();
     this.updateUI();
+    if (this.audioEngine) {
+      this.audioEngine.play('sellTower');
+    }
   }
 };
 
@@ -155,11 +246,11 @@ window.Game.prototype.toggleSpeed = function() {
   this.ui.updateSpeedButton(this.speedMultiplier, this.autoSpeedEnabled);
 };
 
-// Check if any enemies are still in the tower defense area
+// Check if any enemies are still in tower defense area
 window.Game.prototype.checkEnemiesInDefenseArea = function() {
   if (this.towerManager.towers.length === 0) return false;
   
-  // Find the furthest tower position along the path
+  // Find furthest tower position along the path
   let maxTowerProgress = 0;
   for (let tower of this.towerManager.towers) {
     const towerProgress = this.path.getProgressAtPosition(
@@ -169,7 +260,7 @@ window.Game.prototype.checkEnemiesInDefenseArea = function() {
     maxTowerProgress = Math.max(maxTowerProgress, towerProgress);
   }
   
-  // Check if any enemy is still before or at the furthest tower position
+  // Check if any enemy is still before or at furthest tower position
   for (let enemy of this.enemyManager.enemies) {
     const enemyProgress = this.path.getProgressAtPosition(enemy.x, enemy.y);
     if (enemyProgress <= maxTowerProgress) {
@@ -202,7 +293,7 @@ window.Game.prototype.updateAutoSpeed = function(deltaTime) {
     this.speedMultiplier = 1;
     this.currentlySpeededUp = false;
     
-    // Reset the delay timer if towers are still active
+    // Reset delay timer if towers are still active
     if (enemiesInDefenseArea || !hasEnemies) {
       this.towerLastFiredTime = Date.now();
     }
@@ -213,16 +304,21 @@ window.Game.prototype.updateAutoSpeed = function(deltaTime) {
 
 // Call this when any tower fires
 window.Game.prototype.recordTowerFire = function() {
-  this.towerLastFiredTime = Date.now();
+  this.lastTowerFireTime = Date.now();
+  this.projectilesFired++;
   this.currentlySpeededUp = false;
   this.speedMultiplier = 1;
+};
+
+window.Game.prototype.recordEnemyKill = function() {
+  this.enemiesKilled++;
 };
 
 window.Game.prototype.togglePause = function() {
   this.paused = !this.paused;
   const hint = document.querySelector('.hint');
   if (hint) {
-    hint.textContent = this.paused ? 'PAUSED - Press P to resume' : 'Click to place towers • Towers auto-attack • Don\'t let coins reach the end!';
+    hint.textContent = this.paused ? 'PAUSED - Press P to resume' : '📱 Tap to place towers • Long press towers for options • Don\'t let coins reach the end!';
   }
 };
 
@@ -247,6 +343,9 @@ window.Game.prototype.update = function(deltaTime) {
   // Update UI
   this.updateUI();
   
+  // Update status icons
+  this.updateStatusIcons();
+  
   // Check game over
   this.checkGameOver();
 };
@@ -254,11 +353,14 @@ window.Game.prototype.update = function(deltaTime) {
 window.Game.prototype.render = function() {
   this.renderer.clear();
   this.renderer.drawGrid(this.grid);
-  this.renderer.drawPath(this.path.waypoints);
+  this.renderer.drawPath(this.path);
   
   // Draw tower placement preview
   if (!this.gameOver && !this.paused) {
-    const gridPos = this.input.getGridPosition(this.grid.cellSize);
+    const gridPos = {
+      row: Math.floor(this.input.mouse.y / this.grid.cellSize),
+      col: Math.floor(this.input.mouse.x / this.grid.cellSize)
+    };
     const selectedTowerType = this.ui.getSelectedTowerType();
     const canPlace = !this.grid.isOccupied(gridPos.row, gridPos.col) && selectedTowerType;
     
@@ -304,7 +406,13 @@ window.Game.prototype.render = function() {
 window.Game.prototype.checkEnemyEscapes = function() {
   for (let i = this.enemyManager.enemies.length - 1; i >= 0; i--) {
     const enemy = this.enemyManager.enemies[i];
-    if (enemy.isAtEnd()) {
+    
+    // Check if enemy died (not just escaped)
+    if (enemy.health <= 0) {
+      this.recordEnemyKill();
+      this.gold += enemy.reward;
+      this.enemyManager.removeEnemy(enemy);
+    } else if (enemy.isAtEnd()) {
       this.lives--;
       this.enemyManager.removeEnemy(enemy);
       
@@ -340,6 +448,36 @@ window.Game.prototype.updateWaveDisplay = function(wave) {
   this.wave = wave;
 };
 
+window.Game.prototype.updateStatusIcons = function() {
+  let statusDiv = document.getElementById('gameStatus');
+  if (!statusDiv) {
+    // Create status div if it doesn't exist
+    statusDiv = document.createElement('div');
+    statusDiv.id = 'gameStatus';
+    statusDiv.style.cssText = `
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      background: rgba(0, 0, 0, 0.8);
+      color: white;
+      padding: 10px;
+      border-radius: 5px;
+      font-family: monospace;
+      font-size: 12px;
+      z-index: 1000;
+    `;
+    document.body.appendChild(statusDiv);
+  }
+  statusDiv.innerHTML = `
+    <div style="margin-bottom: 5px;">🎮 Game Status</div>
+    <div>🏰 Towers: ${this.towersPlaced}</div>
+    <div>🔫 Projectiles: ${this.projectilesFired}</div>
+    <div>💀 Enemies Killed: ${this.enemiesKilled}</div>
+    <div>⚡ Speed: ${this.speedMultiplier}x</div>
+    <div>🎯 Wave: ${this.waveManager.getCurrentWave()}/20</div>
+  `;
+};
+
 // Initialize game when page loads
 window.addEventListener('DOMContentLoaded', function() {
   window.game = new window.Game();
@@ -353,19 +491,20 @@ window.addEventListener('DOMContentLoaded', function() {
     window.game.render();
   };
   
-  // Start the game loop
   // Initialize audio on first user interaction
-  const initAudioOnFirstClick = () => {
+  const initAudioOnFirstInteraction = () => {
     if (window.game && window.game.audioEngine) {
       window.game.audioEngine.init();
       window.game.audioEngine.play('backgroundMusic');
-      document.removeEventListener('click', initAudioOnFirstClick);
-      document.removeEventListener('keydown', initAudioOnFirstClick);
+      document.removeEventListener('click', initAudioOnFirstInteraction);
+      document.removeEventListener('keydown', initAudioOnFirstInteraction);
+      document.removeEventListener('touchstart', initAudioOnFirstInteraction);
     }
   };
   
-  document.addEventListener('click', initAudioOnFirstClick);
-  document.addEventListener('keydown', initAudioOnFirstClick);
+  document.addEventListener('click', initAudioOnFirstInteraction);
+  document.addEventListener('keydown', initAudioOnFirstInteraction);
+  document.addEventListener('touchstart', initAudioOnFirstInteraction);
   
   // Start game loop
   window.startGame();

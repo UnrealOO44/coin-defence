@@ -61,37 +61,37 @@ window.WaveDefinition.prototype.getEnemyStats = function(type, waveNumber) {
     case 'bitcoin':
       return {
         health: Math.floor(50 * multiplier),
-        speed: 50,
+        speed: 50, // Slowed down for better balance
         reward: Math.floor(10 * multiplier)
       };
     case 'ethereum':
       return {
         health: Math.floor(80 * multiplier),
-        speed: 40,
+        speed: 45, // Slowed down for better balance
         reward: Math.floor(15 * multiplier)
       };
     case 'dogecoin':
       return {
         health: Math.floor(30 * multiplier),
-        speed: 80,
+        speed: 80, // Still fastest but more reasonable
         reward: Math.floor(8 * multiplier)
       };
     case 'monero':
       return {
         health: Math.floor(120 * multiplier),
-        speed: 30,
+        speed: 35, // Slow tank movement
         reward: Math.floor(25 * multiplier)
       };
     case 'shooter':
       return {
         health: Math.floor(100 * multiplier), // Higher health than regular enemies
-        speed: 35, // Slower movement (they pause to shoot)
+        speed: 40, // Slow but dangerous enemy
         reward: Math.floor(30 * multiplier) // Higher reward due to danger
       };
     default:
       return {
         health: 50,
-        speed: 50,
+        speed: 80,
         reward: 10
       };
   }

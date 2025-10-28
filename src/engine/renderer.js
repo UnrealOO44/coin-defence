@@ -8,8 +8,11 @@ window.FILE_MANIFEST.push({
 window.Renderer = function(canvas) {
   this.canvas = canvas;
   this.ctx = canvas.getContext('2d');
-  this.cellSize = 50;
-  this.pixelRenderer = new window.PixelSpriteRenderer(this.ctx);
+  this.cellSize = 20; // Fixed cell size for 20x20 pixel grid
+};
+
+window.Renderer.prototype.updateCellSize = function(cellSize) {
+  this.cellSize = cellSize;
 };
 
 window.Renderer.prototype.clear = function() {
@@ -23,48 +26,78 @@ window.Renderer.prototype.drawGrid = function(grid) {
 
   for (let row = 0; row <= grid.rows; row++) {
     this.ctx.beginPath();
-    this.ctx.moveTo(0, row * grid.cellSize);
-    this.ctx.lineTo(grid.cols * grid.cellSize, row * grid.cellSize);
+    this.ctx.moveTo(0, row * this.cellSize);
+    this.ctx.lineTo(grid.cols * this.cellSize, row * this.cellSize);
     this.ctx.stroke();
   }
 
   for (let col = 0; col <= grid.cols; col++) {
     this.ctx.beginPath();
-    this.ctx.moveTo(col * grid.cellSize, 0);
-    this.ctx.lineTo(col * grid.cellSize, grid.rows * grid.cellSize);
+    this.ctx.moveTo(col * this.cellSize, 0);
+    this.ctx.lineTo(col * this.cellSize, grid.rows * this.cellSize);
     this.ctx.stroke();
   }
 };
 
 window.Renderer.prototype.drawPath = function(path) {
   this.ctx.strokeStyle = '#34495e';
-  this.ctx.lineWidth = this.cellSize;
+  this.ctx.lineWidth = this.cellSize * 0.8; // Wider path that fills most of the cell
   this.ctx.lineCap = 'square';
+  this.ctx.lineJoin = 'miter';
 
-  this.ctx.beginPath();
-  for (let i = 0; i < path.length; i++) {
-    const point = path[i];
-    const x = point.col * this.cellSize + this.cellSize / 2;
-    const y = point.row * this.cellSize + this.cellSize / 2;
-
-    if (i === 0) {
-      this.ctx.moveTo(x, y);
-    } else {
-      this.ctx.lineTo(x, y);
+  // Draw filled path cells first for solid appearance
+  for (let row = 0; row < path.grid.rows; row++) {
+    for (let col = 0; col < path.grid.cols; col++) {
+      if (path.grid.cells[row][col].path) {
+        this.ctx.fillStyle = '#34495e';
+        this.ctx.fillRect(
+          col * this.cellSize + this.cellSize * 0.1,
+          row * this.cellSize + this.cellSize * 0.1,
+          this.cellSize * 0.8,
+          this.cellSize * 0.8
+        );
+      }
     }
   }
-  this.ctx.stroke();
 };
 
 window.Renderer.prototype.drawTower = function(tower) {
-  // Use pixel sprite renderer for towers
-  this.pixelRenderer.drawTower(tower);
-  
+  // Draw simple tower shapes
   const x = tower.col * this.cellSize + this.cellSize / 2;
   const y = tower.row * this.cellSize + this.cellSize / 2;
-
+  
+  // Blinking effect when damaged
+  if (tower.blinking && Math.floor(tower.blinkDuration / 100) % 2 === 0) {
+    this.ctx.globalAlpha = 0.5;
+  }
+  
+  // Draw tower based on type
+  const towerSize = this.cellSize * 0.4; // Larger relative to 20px cells
+  switch(tower.type) {
+    case 'miner':
+      this.drawMinerTowerShape(x, y, towerSize, tower.level);
+      break;
+    case 'lightning':
+      this.drawLightningTowerShape(x, y, towerSize, tower.level);
+      break;
+    case 'fire':
+      this.drawFireTowerShape(x, y, towerSize, tower.level);
+      break;
+  }
+  
+  this.ctx.globalAlpha = 1.0;
+  
+  // Draw level indicator
+  if (tower.level > 1) {
+    this.ctx.fillStyle = '#fff';
+    this.ctx.font = 'bold 10px Arial';
+    this.ctx.textAlign = 'center';
+    this.ctx.textBaseline = 'middle';
+    this.ctx.fillText(tower.level, x, y);
+  }
+  
   // Draw health bar if damaged
-  if (tower.isDamaged && tower.isDamaged()) {
+  if (tower.showHealthBar || tower.health < tower.maxHealth) {
     this.drawTowerHealthBar(tower, x, y);
   }
 
@@ -291,10 +324,121 @@ window.Renderer.prototype.drawMoneroEnemy = function(x, y, size) {
 };
 
 window.Renderer.prototype.drawProjectile = function(projectile) {
+  // Draw projectile with trail effect
+  if (projectile.trailPositions && projectile.trailPositions.length > 0) {
+    // Draw trail
+    projectile.trailPositions.forEach((pos, index) => {
+      const alpha = (index + 1) / projectile.trailPositions.length * 0.5;
+      this.ctx.fillStyle = projectile.color.replace(')', `, ${alpha})`).replace('rgb', 'rgba');
+      this.ctx.beginPath();
+      this.ctx.arc(pos.x, pos.y, projectile.size * 0.7, 0, Math.PI * 2);
+      this.ctx.fill();
+    });
+  }
+  
+  // Draw main projectile
   this.ctx.fillStyle = projectile.color;
   this.ctx.beginPath();
   this.ctx.arc(projectile.x, projectile.y, projectile.size, 0, Math.PI * 2);
   this.ctx.fill();
+};
+
+window.Renderer.prototype.drawMinerTowerShape = function(x, y, size, level) {
+  // Draw pickaxe/mine shape
+  this.ctx.fillStyle = '#95a5a6';
+  this.ctx.strokeStyle = '#7f8c8d';
+  this.ctx.lineWidth = 2;
+  
+  // Base platform
+  this.ctx.fillRect(x - size, y - size/2, size * 2, size);
+  this.ctx.strokeRect(x - size, y - size/2, size * 2, size);
+  
+  // Pickaxe handle
+  this.ctx.fillStyle = '#8b4513';
+  this.ctx.fillRect(x - size/6, y - size * 1.5, size/3, size);
+  
+  // Pickaxe head
+  this.ctx.fillStyle = '#c0c0c0';
+  this.ctx.fillRect(x - size/2, y - size * 1.7, size, size/3);
+  
+  // Level indicator with size
+  if (level > 1) {
+    this.ctx.strokeStyle = '#f39c12';
+    this.ctx.lineWidth = 3;
+    this.ctx.beginPath();
+    this.ctx.arc(x, y, size + level * 2, 0, Math.PI * 2);
+    this.ctx.stroke();
+  }
+};
+
+window.Renderer.prototype.drawLightningTowerShape = function(x, y, size, level) {
+  // Draw tesla coil shape
+  this.ctx.fillStyle = '#3498db';
+  this.ctx.strokeStyle = '#2980b9';
+  this.ctx.lineWidth = 2;
+  
+  // Base
+  this.ctx.fillRect(x - size/2, y - size/3, size, size * 2/3);
+  this.ctx.strokeRect(x - size/2, y - size/3, size, size * 2/3);
+  
+  // Coil
+  this.ctx.beginPath();
+  this.ctx.arc(x, y - size/3, size/2, 0, Math.PI * 2);
+  this.ctx.fill();
+  this.ctx.stroke();
+  
+  // Electric effect
+  this.ctx.strokeStyle = '#f1c40f';
+  this.ctx.lineWidth = 1;
+  for (let i = 0; i < 3; i++) {
+    const angle = (Math.PI * 2 / 3) * i;
+    this.ctx.beginPath();
+    this.ctx.moveTo(x, y - size/3);
+    this.ctx.lineTo(x + Math.cos(angle) * size * 1.5, y - size/3 + Math.sin(angle) * size * 1.5);
+    this.ctx.stroke();
+  }
+  
+  // Level indicator with size
+  if (level > 1) {
+    this.ctx.strokeStyle = '#f39c12';
+    this.ctx.lineWidth = 3;
+    this.ctx.beginPath();
+    this.ctx.arc(x, y, size + level * 2, 0, Math.PI * 2);
+    this.ctx.stroke();
+  }
+};
+
+window.Renderer.prototype.drawFireTowerShape = function(x, y, size, level) {
+  // Draw flamethrower shape
+  this.ctx.fillStyle = '#e74c3c';
+  this.ctx.strokeStyle = '#c0392b';
+  this.ctx.lineWidth = 2;
+  
+  // Base
+  this.ctx.fillRect(x - size/2, y - size/2, size, size);
+  this.ctx.strokeRect(x - size/2, y - size/2, size, size);
+  
+  // Nozzle
+  this.ctx.fillStyle = '#34495e';
+  this.ctx.fillRect(x - size/4, y - size * 0.8, size/2, size/3);
+  
+  // Fire effect
+  this.ctx.fillStyle = '#f39c12';
+  for (let i = 0; i < 3; i++) {
+    const offset = (i - 1) * size/6;
+    this.ctx.beginPath();
+    this.ctx.arc(x + offset, y - size * 0.9, size/6, 0, Math.PI * 2);
+    this.ctx.fill();
+  }
+  
+  // Level indicator with size
+  if (level > 1) {
+    this.ctx.strokeStyle = '#f39c12';
+    this.ctx.lineWidth = 3;
+    this.ctx.beginPath();
+    this.ctx.arc(x, y, size + level * 2, 0, Math.PI * 2);
+    this.ctx.stroke();
+  }
 };
 
 window.Renderer.prototype.drawPreview = function(row, col, canPlace, towerType) {
@@ -323,15 +467,15 @@ window.Renderer.prototype.drawRangePreview = function(row, col, towerType) {
 
   switch(towerType) {
     case 'miner':
-      range = 80;
+      range = 40; // 2 grids (2 * 20px)
       color = 'rgba(149, 165, 166, 0.2)';
       break;
     case 'lightning':
-      range = 120;
+      range = 80; // 4 grids (4 * 20px)
       color = 'rgba(52, 152, 219, 0.2)';
       break;
     case 'fire':
-      range = 100;
+      range = 60; // 3 grids (3 * 20px)
       color = 'rgba(231, 76, 60, 0.2)';
       break;
   }
@@ -355,21 +499,24 @@ window.Renderer.prototype.drawRangePreview = function(row, col, towerType) {
 window.Renderer.prototype.drawTowerIconPreview = function(row, col, towerType) {
   const x = col * this.cellSize + this.cellSize / 2;
   const y = row * this.cellSize + this.cellSize / 2;
-
-  // Create a temporary tower object for preview
-  const tempTower = {
-    col: col,
-    row: row,
-    type: towerType,
-    level: 1,
-    upgradesMade: 0,
-    maxUpgrades: 3
-  };
+  const size = this.cellSize * 0.4; // Larger for 20px cells
   
-  // Draw pixel sprite preview with transparency
   this.ctx.save();
   this.ctx.globalAlpha = 0.7;
-  this.pixelRenderer.drawTower(tempTower);
+  
+  // Draw tower preview
+  switch(towerType) {
+    case 'miner':
+      this.drawMinerTowerShape(x, y, size, 1);
+      break;
+    case 'lightning':
+      this.drawLightningTowerShape(x, y, size, 1);
+      break;
+    case 'fire':
+      this.drawFireTowerShape(x, y, size, 1);
+      break;
+  }
+  
   this.ctx.restore();
 };
 

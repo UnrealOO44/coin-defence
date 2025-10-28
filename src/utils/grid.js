@@ -63,6 +63,26 @@ window.Grid.prototype.getGridPosition = function(x, y) {
   };
 };
 
+window.Grid.prototype.updateSize = function(newCanvasWidth, newCanvasHeight) {
+  this.canvasWidth = newCanvasWidth;
+  this.canvasHeight = newCanvasHeight;
+  this.cols = Math.floor(newCanvasWidth / this.cellSize);
+  this.rows = Math.floor(newCanvasHeight / this.cellSize);
+  
+  // Reinitialize grid with new dimensions
+  this.cells = [];
+  for (let row = 0; row < this.rows; row++) {
+    this.cells[row] = [];
+    for (let col = 0; col < this.cols; col++) {
+      this.cells[row][col] = {
+        occupied: false,
+        type: 'empty',
+        path: false
+      };
+    }
+  }
+};
+
 window.gridToPixel = function(row, col, cellSize) {
   return {
     x: col * cellSize,

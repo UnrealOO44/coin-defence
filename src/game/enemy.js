@@ -16,16 +16,16 @@ window.Enemy = function(type, health, speed, reward, path) {
   this.position = this.path.getWaypoint(0);
   this.x = this.position.x;
   this.y = this.position.y;
-  this.size = type === 'shooter' ? 16 : 12; // Shooter enemies are slightly larger
+  this.size = type === 'shooter' ? 10 : 8; // Adjusted for 20px cell size
   this.color = this.getColorByType(type);
   this.slowed = false;
   this.slowTimer = 0;
   
-  // Shooting enemy properties
+  // Shooting enemy properties - scaled for larger grid
   if (type === 'shooter') {
     this.lastShot = 0;
     this.fireRate = 2000; // Shoot every 2 seconds
-    this.range = 100; // Can shoot towers within 100 pixels
+    this.range = 100; // 5 grids (5 * 20px) for shooter enemies
     this.damage = 20; // Damage dealt to towers
   }
 };
@@ -102,8 +102,51 @@ window.Enemy.prototype.getPixelPosition = function() {
   return { x: this.x, y: this.y };
 };
 
+window.Enemy.prototype.getPixelPosition = function() {
+  return { x: this.x, y: this.y };
+};
+
 window.Enemy.prototype.isAtEnd = function() {
   return this.currentWaypoint >= this.path.waypoints.length - 1;
+};
+
+window.Enemy.prototype.canShoot = function() {
+  return this.type === 'shooter';
+};
+
+window.Enemy.prototype.hasTarget = function(towerManager) {
+  return this.findTowerTarget() !== null;
+};
+
+window.Enemy.prototype.selectTarget = function(towerManager) {
+  return this.findTowerTarget();
+};
+
+window.Enemy.prototype.canFire = function() {
+  const now = Date.now();
+  return now - this.lastShot >= this.fireRate;
+};
+
+window.Enemy.prototype.fire = function(projectileManager, towerManager) {
+  const target = this.findTowerTarget();
+  if (target) {
+    // Create projectile for enemy shooting
+    projectileManager.createProjectile(
+      this.x,
+      this.y,
+      target,
+      this.damage,
+      5, // projectile speed
+      3, // projectile size
+      '#e74c3c', // red color for enemy projectiles
+      null // no slow effect
+    );
+    this.lastShot = Date.now();
+  }
+};
+
+window.Enemy.prototype.isDead = function() {
+  return this.health <= 0;
 };
 
 window.Enemy.prototype.updateShooting = function(deltaTime) {

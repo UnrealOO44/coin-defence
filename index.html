@@ -54,6 +54,9 @@
         .stat.wave {
             color: #3498db;
         }
+        .stat.score {
+            color: #f39c12;
+        }
         #gameCanvas {
             display: block;
             border: 2px solid #2c3e50;
@@ -72,15 +75,16 @@
         }
         .controls {
             background: rgb(16 18 24 / 0.8);
-            padding: 12px;
+            padding: 20px 12px 12px 12px;
             display: flex;
             gap: 15px;
             justify-content: center;
             border-top: 1px solid #2c3e50;
+            position: relative;
         }
         .tower-btn {
-            width: 80px;
-            height: 80px;
+            width: 90px;
+            height: 90px;
             background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
             border: 2px solid #2c3e50;
             border-radius: 8px;
@@ -90,31 +94,41 @@
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            gap: 4px;
-            transition: all 0.2s ease;
+            gap: 2px;
+            transition: all 0.15s ease;
             position: relative;
             box-shadow: 0 2px 4px rgba(0,0,0,0.3);
             font-family: 'Courier New', monospace;
             font-weight: bold;
-            overflow: hidden;
+            overflow: visible;
+            padding: 8px 4px 4px 4px;
+            z-index: 5;
         }
         .tower-btn::before {
             content: '';
             position: absolute;
             top: 0;
-            left: -100%;
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
-            transition: left 0.5s;
+            left: 0;
+            width: calc(100% - 4px);
+            height: calc(100% - 4px);
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.05), transparent);
+            background-size: 200% 100%;
+            background-position: -200% 0;
+            transition: background-position 0.3s ease-in-out;
+            z-index: 1;
+            border-radius: 6px;
+            pointer-events: none;
+            top: 2px;
+            left: 2px;
         }
         .tower-btn:hover::before {
-            left: 100%;
+            background-position: 200% 0;
         }
         .tower-btn:hover {
             background: linear-gradient(135deg, #5dade2 0%, #3498db 100%);
             transform: translateY(-2px);
             box-shadow: 0 4px 8px rgba(0,0,0,0.4);
+            z-index: 10;
         }
         .tower-btn.miner {
             background: linear-gradient(135deg, #95a5a6, #7f8c8d);
@@ -147,24 +161,49 @@
             box-shadow: 0 0 12px rgba(230, 126, 34, 0.6);
         }
         .tower-btn:disabled {
-            background: linear-gradient(135deg, #7f8c8d 0%, #5d6d7e 100%);
-            cursor: not-allowed;
-            opacity: 0.6;
-            transform: none;
+            background: linear-gradient(135deg, #7f8c8d 0%, #5d6d7e 100%) !important;
+            cursor: not-allowed !important;
+            opacity: 0.6 !important;
+            transform: none !important;
+            pointer-events: none !important;
+        }
+        .tower-btn.disabled {
+            background: linear-gradient(135deg, #7f8c8d 0%, #5d6d7e 100%) !important;
+            cursor: not-allowed !important;
+            opacity: 0.6 !important;
+            transform: none !important;
+            pointer-events: none !important;
+            border-color: #5d6d7e !important;
+        }
+        .tower-btn.disabled::before {
+            display: none;
+        }
+        .tower-btn.disabled:hover {
+            background: linear-gradient(135deg, #7f8c8d 0%, #5d6d7e 100%) !important;
+            transform: none !important;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3) !important;
         }
         .tower-icon {
-            width: 40px;
-            height: 40px;
-            line-height: 1;
+            width: 30px;
+            height: 30px;
+            line-height: 30px;
+            font-size: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
             image-rendering: pixelated;
             image-rendering: -moz-crisp-edges;
             image-rendering: crisp-edges;
+            position: relative;
+            z-index: 2;
         }
         .tower-name {
-            font-size: 10px;
+            font-size: 9px;
             font-weight: bold;
             text-align: center;
             line-height: 1;
+            margin: 0;
+            padding: 0;
         }
         .tower-cost {
             position: absolute;
@@ -174,9 +213,16 @@
             color: #000;
             font-size: 10px;
             font-weight: bold;
-            padding: 2px 6px;
+            padding: 2px 5px;
             border-radius: 10px;
             border: 1px solid #000;
+            min-width: 20px;
+            text-align: center;
+            z-index: 20;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.5);
+            pointer-events: none;
+            transform: translateZ(0);
+            position: absolute;
         }
         .action-btn {
             background: #3498db;
@@ -319,29 +365,31 @@
             <span>🏰 Crypto Tower Defense</span>
             <div class="game-stats">
                 <span class="stat gold">💰 <span id="gold">100</span></span>
-                <span class="stat lives">❤️ <span id="lives">20</span></span>
                 <span class="stat wave">🌊 Wave <span id="wave">1</span></span>
+                <span class="stat score">⭐ <span id="score">0</span></span>
             </div>
         </div>
         <canvas id="gameCanvas" width="1200" height="700"></canvas>
         <div class="controls">
-            <button class="tower-btn miner" id="tower1Btn">
+            <button class="tower-btn miner" data-tower="miner" id="tower1Btn">
                 <span class="tower-icon">⛏️</span>
                 <span class="tower-name">Miner</span>
                 <span class="tower-cost">50</span>
             </button>
-            <button class="tower-btn lightning" id="tower2Btn">
+            <button class="tower-btn lightning" data-tower="lightning" id="tower2Btn">
                 <span class="tower-icon">⚡</span>
                 <span class="tower-name">Lightning</span>
                 <span class="tower-cost">100</span>
             </button>
-            <button class="tower-btn fire" id="tower3Btn">
+            <button class="tower-btn fire" data-tower="fire" id="tower3Btn">
                 <span class="tower-icon">🔥</span>
                 <span class="tower-name">Fire</span>
                 <span class="tower-cost">150</span>
             </button>
             <button class="action-btn start-wave" id="startWaveBtn">▶️ Start Wave</button>
+            <button class="action-btn" id="pauseBtn">⏸️ Pause</button>
             <button class="action-btn" id="speedBtn">⚡ Speed: 1x</button>
+            <button class="action-btn" id="muteBtn">🔊 Sound</button>
         </div>
         <div class="tower-info" id="towerInfo"></div>
         <div class="tower-controls" id="towerControls">

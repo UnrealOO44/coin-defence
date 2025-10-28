@@ -11,6 +11,7 @@ window.AudioEngine = function() {
   this.sfxVolume = 0.5;
   this.masterVolume = 0.8;
   this.muted = false;
+  this.isMuted = false;
   this.audioContext = null;
   this.initialized = false;
 };
@@ -225,7 +226,7 @@ window.AudioEngine.prototype.playSound = function(type, duration, volume) {
   oscillator.stop(ctx.currentTime + duration / 1000);
 };
 
-// Play background music (simple looping melody)
+// Play background music (cryptocurrency-themed rhythmic melody)
 window.AudioEngine.prototype.playBackgroundMusic = function() {
   if (!this.audioContext || this.muted || this.backgroundMusicPlaying) return;
   
@@ -235,8 +236,19 @@ window.AudioEngine.prototype.playBackgroundMusic = function() {
   const playMelody = () => {
     if (!this.backgroundMusicPlaying || this.muted) return;
     
-    const notes = [262, 294, 330, 349, 392, 440, 494, 523]; // C4 to C5 scale
-    const melody = [0, 2, 4, 2, 5, 4, 2, 0, 3, 5, 7, 5, 4, 3, 2, 1]; // Simple pattern
+    // Crypto-themed scale with more interesting harmony
+    const notes = [262, 294, 330, 349, 392, 440, 494, 523, 587, 659]; // C4 to E5 scale
+    
+    // Upward trending melody pattern (like crypto charts!)
+    const melody = [
+      0, 2, 4, 2, 5, 4, 2, 0,  // Main theme
+      3, 5, 7, 5, 8, 7, 5, 3,  // Variation
+      6, 8, 9, 8, 6, 5, 4, 2,  // Climax
+      0, 1, 2, 3, 4, 5, 6, 7   // Ascending pattern
+    ];
+    
+    // Rhythm pattern for more dynamic feel
+    const rhythm = [250, 250, 500, 250, 250, 500, 250, 250, 500, 250, 250, 500, 250, 250, 750, 250];
     
     let noteIndex = 0;
     
@@ -245,30 +257,63 @@ window.AudioEngine.prototype.playBackgroundMusic = function() {
       
       const noteIndexInMelody = melody[noteIndex % melody.length];
       const frequency = notes[noteIndexInMelody];
+      const noteDuration = rhythm[noteIndex % rhythm.length];
       
       const gainNode = ctx.createGain();
       gainNode.connect(ctx.destination);
-      gainNode.gain.value = this.musicVolume * this.masterVolume * 0.3;
-      gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+      gainNode.gain.value = this.musicVolume * this.masterVolume * 0.25;
+      gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + noteDuration / 1000);
       
       const oscillator = ctx.createOscillator();
       oscillator.connect(gainNode);
       oscillator.frequency.value = frequency;
-      oscillator.type = 'triangle';
+      
+      // Vary the waveform for interest
+      const waveTypes = ['triangle', 'sine', 'triangle', 'square'];
+      oscillator.type = waveTypes[Math.floor(noteIndex / 4) % waveTypes.length];
       
       oscillator.start(ctx.currentTime);
-      oscillator.stop(ctx.currentTime + 0.3);
+      oscillator.stop(ctx.currentTime + noteDuration / 1000);
       
       noteIndex++;
       
       if (noteIndex >= melody.length) {
-        setTimeout(playMelody, 1000); // Pause between repetitions
+        setTimeout(playMelody, 500); // Shorter pause for continuity
       } else {
-        setTimeout(playNote, 200); // Note duration
+        setTimeout(playNote, noteDuration); // Use rhythm pattern
       }
     };
     
+    // Add bass line for depth
+    const playBass = () => {
+      if (!this.backgroundMusicPlaying || this.muted) return;
+      
+      const bassNotes = [130, 164, 196, 130]; // Lower octave foundation
+      
+      bassNotes.forEach((freq, index) => {
+        setTimeout(() => {
+          if (!this.backgroundMusicPlaying || this.muted) return;
+          
+          const gainNode = ctx.createGain();
+          gainNode.connect(ctx.destination);
+          gainNode.gain.value = this.musicVolume * this.masterVolume * 0.15;
+          gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+          
+          const oscillator = ctx.createOscillator();
+          oscillator.connect(gainNode);
+          oscillator.frequency.value = freq;
+          oscillator.type = 'sine';
+          
+          oscillator.start(ctx.currentTime);
+          oscillator.stop(ctx.currentTime + 0.5);
+        }, index * 1000);
+      });
+      
+      setTimeout(playBass, 4000); // Repeat bass pattern
+    };
+    
     playNote();
+    playBass(); // Start bass line
   };
   
   playMelody();
@@ -290,6 +335,7 @@ window.AudioEngine.prototype.play = function(soundName) {
 // Toggle mute
 window.AudioEngine.prototype.toggleMute = function() {
   this.muted = !this.muted;
+  this.isMuted = this.muted;
   if (this.muted) {
     this.stopBackgroundMusic();
   } else {
